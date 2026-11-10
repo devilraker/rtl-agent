@@ -1,110 +1,84 @@
-`timescale 1ns/1ps
+`timescale 1ns/1ns
 
 module tb;
-    reg clk;
-    reg rst;
-    reg en;
-    wire [3:0] q;
 
-    // Instantiate the counter
-    counter uut (
-        .clk(clk),
-        .rst(rst),
-        .en(en),
-        .q(q)
+    // Inputs
+    reg [3:0] a;
+    reg [3:0] b;
+    reg [2:0] op;
+
+    // Outputs
+    wire [3:0] result;
+    wire zero;
+    wire carry;
+
+    // Instantiate the ALU
+    alu uut (
+        .a(a),
+        .b(b),
+        .op(op),
+        .result(result),
+        .zero(zero),
+        .carry(carry)
     );
 
-    // Clock generation: 10ns period
-    always #5 clk = ~clk;
+    // Task to check outputs
+    task check_results(
+        input [3:0] exp_result,
+        input       exp_zero,
+        input       exp_carry
+    );
+        begin
+            #1; // Small delay for combinational propagation
+            if (result !== exp_result || zero !== exp_zero || carry !== exp_carry) begin
+                $display("FAIL: op=%b, a=%d, b=%d | Expected: res=%d, zero=%b, carry=%b | Got: res=%d, zero=%b, carry=%b",
+                         op, a, b, exp_result, exp_zero, exp_carry, result, zero, carry);
+                $finish;
+            end
+        end
+    endtask
 
-    // Expected value model
-    reg [3:0] expected_q;
-    reg error_found;
+    // Expected value calculation functions for self-checking
+    function [4:0] compute_expected(input [2:0] operation, input [3:0] op_a, input [3:0] op_b);
+        reg [4:0] full_res;
+        begin
+            full_res = 5'b0;
+            case (operation)
+                3'b000: full_res = op_a + op_b;                               // ADD: {carry, result}
+                3'b001: full_res = { (op_a < op_b), (op_a - op_b) & 4'hF };   // SUB: {borrow, result}
+                3'b010: full_res = {1'b0, op_a & op_b};                       // AND
+                3'b011: full_res = {1'b0, op_a | op_b};                       // OR
+                3'b100: full_res = {1'b0, op_a ^ op_b};                       // XOR
+                3'b101: full_res = {1'b0, ~op_a};                              // NOT
+                3'b110: full_res = {1'b0, op_a << 1};                         // SHL
+                3'b111: full_res = {1'b0, op_a >> 1};                         // SHR
+                default: full_res = 5'b0;
+            endcase
+            compute_expected = full_res;
+        end
+    endfunction
+
+    // Test stimulus
+    integer i_op, i_a, i_b;
+    reg [4:0] exp;
 
     initial begin
-        // Initialize signals
-        clk = 0;
-        rst = 0;
-        en = 0;
-        expected_q = 4'd0;
-        error_found = 0;
+        // Exhaustive or comprehensive corner-case testing
+        // Test all operations across a variety of inputs including corner cases (0, 15, a=b, a<b)
+        for (i_op = 0; i_op < 8; i_op = i_op + 1) begin
+            for (i_a = 0; i_a < 16; i_a = i_a + 1) begin
+                for (i_b = 0; i_b < 16; i_b = i_b + 1) begin
+                    op = i_op[2:0];
+                    a  = i_a[3:0];
+                    b  = i_b[3:0];
 
-        // Apply reset
-        @(posedge clk);
-        #1;
-        rst = 1;
-        expected_q = 4'd0;
-        
-        @(posedge clk);
-        #1;
-        if (q !== expected_q) begin
-            $display("FAIL: Reset failed. Expected: %0d, Got: %0d at time %0t", expected_q, q, $time);
-            error_found = 1;
-        end
-
-        // Release reset, keep en low (hold value)
-        rst = 0;
-        @(posedge clk);
-        #1;
-        if (q !== expected_q) begin
-            $display("FAIL: Hold failed when en=0. Expected: %0d, Got: %0d at time %0t", expected_q, q, $time);
-            error_found = 1;
-        end
-
-        // Enable counting for a few cycles
-        en = 1;
-        repeat (5) begin
-            @(posedge clk);
-            expected_q = expected_q + 4'd1;
-            #1;
-            if (q !== expected_q) begin
-                $display("FAIL: Count failed when en=1. Expected: %0d, Got: %0d at time %0t", expected_q, q, $time);
-                error_found = 1;
+                    exp = compute_expected(op, a, b);
+                    check_results(exp[3:0], (exp[3:0] == 4'b0), exp[4]);
+                end
             end
         end
 
-        // Disable counting (hold value)
-        en = 0;
-        repeat (3) begin
-            @(posedge clk);
-            #1;
-            if (q !== expected_q) begin
-                $display("FAIL: Hold failed after counting. Expected: %0d, Got: %0d at time %0t", expected_q, q, $time);
-                error_found = 1;
-            end
-        end
-
-        // Enable counting to test wrap-around (15 -> 0)
-        en = 1;
-        // Current expected_q is 5, we need it to reach 15 (10 more increments)
-        repeat (11) begin
-            @(posedge clk);
-            expected_q = expected_q + 4'd1;
-            #1;
-            if (q !== expected_q) begin
-                $display("FAIL: Count/Wrap failed. Expected: %0d, Got: %0d at time %0t", expected_q, q, $time);
-                error_found = 1;
-            end
-        end
-
-        // Test synchronous reset while counting
-        rst = 1;
-        expected_q = 4'd0;
-        @(posedge clk);
-        #1;
-        if (q !== expected_q) begin
-            $display("FAIL: Mid-count synchronous reset failed. Expected: %0d, Got: %0d at time %0t", expected_q, q, $time);
-            error_found = 1;
-        end
-
-        rst = 0;
-        @(posedge clk);
-
-        // Final result evaluation
-        if (!error_found) begin
-            $display("PASS");
-        end
-
+        $display("PASS");
         $finish;
     end
 

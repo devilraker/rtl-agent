@@ -1,0 +1,34 @@
+Module name: alu
+
+Description:
+A 4-bit combinational ALU. There is no clock and no reset.
+The outputs must update whenever the inputs change.
+
+Ports:
+  input  [3:0] a        first operand
+  input  [3:0] b        second operand
+  input  [2:0] op       operation select
+  output [3:0] result   operation result
+  output       zero     1 when result is 0, otherwise 0
+  output       carry    see below
+
+Operations:
+  op = 3'b000  ADD    result = a + b (lower 4 bits)
+                      carry = carry-out of the addition
+  op = 3'b001  SUB    result = a - b (lower 4 bits)
+                      carry = 1 when a < b (borrow), otherwise 0
+  op = 3'b010  AND    result = a & b,   carry = 0
+  op = 3'b011  OR     result = a | b,   carry = 0
+  op = 3'b100  XOR    result = a ^ b,   carry = 0
+  op = 3'b101  NOT    result = ~a (b is ignored),   carry = 0
+  op = 3'b110  SHL    result = a shifted left by 1, 0 shifted in,   carry = 0
+  op = 3'b111  SHR    result = a shifted right by 1, 0 shifted in,   carry = 0
+
+Notes:
+  - zero must be computed from the final 4-bit result.
+  - Results wrap at 4 bits (for example 15 + 1 gives result 0, carry 1, zero 1).
+
+Testing requirements:
+  - Test every operation with several input pairs.
+  - Include corner cases: a=0, b=0, a=15, b=15, a=b, and a<b for SUB.
+  - Check result, zero and carry for every case.
