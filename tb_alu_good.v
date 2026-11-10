@@ -1,4 +1,4 @@
-`timescale 1ns/1ns
+`timescale 1ns/1ps
 
 module tb;
 
@@ -22,63 +22,110 @@ module tb;
         .carry(carry)
     );
 
-    // Task to check outputs
-    task check_results(
-        input [3:0] exp_result,
-        input       exp_zero,
-        input       exp_carry
-    );
+    // Variables for checking
+    reg [3:0] exp_result;
+    reg       exp_zero;
+    reg       exp_carry;
+    
+    integer   error_count = 0;
+    integer   test_count = 0;
+
+    // Task to apply inputs, compute expected outputs, and verify
+    task check_alu(input [3:0] in_a, input [3:0] in_b, input [2:0] in_op);
+        reg [4:0] add_temp;
         begin
-            #1; // Small delay for combinational propagation
-            if (result !== exp_result || zero !== exp_zero || carry !== exp_carry) begin
-                $display("FAIL: op=%b, a=%d, b=%d | Expected: res=%d, zero=%b, carry=%b | Got: res=%d, zero=%b, carry=%b",
+            a  = in_a;
+            b  = in_b;
+            op = in_op;
+            
+            // Wait for combinational propagation
+            #1;
+
+            // Compute expected values based on spec
+            exp_carry = 1'b0;
+            case (op)
+                3'b000: begin // ADD
+                    add_temp = a + b;
+                    exp_result = add_temp[3:0];
+                    exp_carry  = add_temp[4];
+                end
+                3'b001: begin // SUB
+                    exp_result = a - b;
+                    exp_carry  = (a < b) ? 1'b1 : 1'b0;
+                end
+                3'b010: exp_result = a & b;   // AND
+                3'b011: exp_result = a | b;   // OR
+                3'b100: exp_result = a ^ b;   // XOR
+                3'b101: exp_result = ~a;      // NOT
+                3'b110: exp_result = a << 1;  // SHL
+                3'b111: exp_result = a >> 1;  // SHR
+                default: exp_result = 4'b0000;
+            endcase
+
+            exp_zero = (exp_result == 4'b0000);
+
+            test_count = test_count + 1;
+
+            // Check against actual outputs
+            if ((result !== exp_result) || (zero !== exp_zero) || (carry !== exp_carry)) begin
+                $display("FAIL: op=%b, a=%0d, b=%0d | Expected: res=%0h, z=%0b, c=%0b | Got: res=%0h, z=%0b, c=%0b",
                          op, a, b, exp_result, exp_zero, exp_carry, result, zero, carry);
-                $finish;
+                error_count = error_count + 1;
             end
         end
     endtask
 
-    // Expected value calculation functions for self-checking
-    function [4:0] compute_expected(input [2:0] operation, input [3:0] op_a, input [3:0] op_b);
-        reg [4:0] full_res;
-        begin
-            full_res = 5'b0;
-            case (operation)
-                3'b000: full_res = op_a + op_b;                               // ADD: {carry, result}
-                3'b001: full_res = { (op_a < op_b), (op_a - op_b) & 4'hF };   // SUB: {borrow, result}
-                3'b010: full_res = {1'b0, op_a & op_b};                       // AND
-                3'b011: full_res = {1'b0, op_a | op_b};                       // OR
-                3'b100: full_res = {1'b0, op_a ^ op_b};                       // XOR
-                3'b101: full_res = {1'b0, ~op_a};                              // NOT
-                3'b110: full_res = {1'b0, op_a << 1};                         // SHL
-                3'b111: full_res = {1'b0, op_a >> 1};                         // SHR
-                default: full_res = 5'b0;
-            endcase
-            compute_expected = full_res;
-        end
-    endfunction
-
-    // Test stimulus
-    integer i_op, i_a, i_b;
-    reg [4:0] exp;
-
     initial begin
-        // Exhaustive or comprehensive corner-case testing
-        // Test all operations across a variety of inputs including corner cases (0, 15, a=b, a<b)
-        for (i_op = 0; i_op < 8; i_op = i_op + 1) begin
-            for (i_a = 0; i_a < 16; i_a = i_a + 1) begin
-                for (i_b = 0; i_b < 16; i_b = i_b + 1) begin
-                    op = i_op[2:0];
-                    a  = i_a[3:0];
-                    b  = i_b[3:0];
+        // --- Corner Cases and Comprehensive Testing ---
 
-                    exp = compute_expected(op, a, b);
-                    check_results(exp[3:0], (exp[3:0] == 4'b0), exp[4]);
-                end
-            end
+        // 1. Zero cases
+        check_alu(4'd0, 4'd0, 3'b000); // ADD: 0 + 0
+        check_alu(4'd0, 4'd0, 3'b001); // SUB: 0 - 0
+        check_alu(4'd0, 4'd0, 3'b010); // AND: 0 & 0
+        check_alu(4'd0, 4'd0, 3'b011); // OR:  0 | 0
+        check_alu(4'd0, 4'd0, 3'b100); // XOR: 0 ^ 0
+        check_alu(4'd0, 4'd0, 3'b101); // NOT: ~0
+        check_alu(4'd0, 4'd0, 3'b110); // SHL: 0 << 1
+        check_alu(4'd0, 4'd0, 3'b111); // SHR: 0 >> 1
+
+        // 2. Max value cases (a=15, b=15)
+        check_alu(4'd15, 4'd15, 3'b000); // ADD: 15 + 15 (Carry & wrap)
+        check_alu(4'd15, 4'd15, 3'b001); // SUB: 15 - 15
+        check_alu(4'd15, 4'd15, 3'b010); // AND: 15 & 15
+        check_alu(4'd15, 4'd15, 3'b011); // OR:  15 | 15
+        check_alu(4'd15, 4'd15, 3'b100); // XOR: 15 ^ 15
+        check_alu(4'd15, 4'd15, 3'b101); // NOT: ~15
+        check_alu(4'd15, 4'd15, 3'b110); // SHL: 15 << 1
+        check_alu(4'd15, 4'd15, 3'b111); // SHR: 15 >> 1
+
+        // 3. Equality cases (a == b)
+        check_alu(4'd5, 4'd5, 3'b000);
+        check_alu(4'd5, 4'd5, 3'b001); // SUB results in 0, borrow=0
+        check_alu(4'd7, 4'd7, 3'b100); // XOR results in 0
+
+        // 4. SUB specific corner cases: a < b (borrow = 1) vs a >= b (borrow = 0)
+        check_alu(4'd3, 4'd5, 3'b001); // 3 - 5 (a < b, borrow=1)
+        check_alu(4'd5, 4'd3, 3'b001); // 5 - 3 (a > b, borrow=0)
+        check_alu(4'd0, 4'd1, 3'b001); // 0 - 1 (borrow=1)
+
+        // 5. Random/general cases across all operations
+        check_alu(4'd9,  4'd6,  3'b000); // ADD with carry out (9+6=15, no carry), let's do 10+6
+        check_alu(4'd10, 4'd6,  3'b000); // 10 + 6 = 16 -> res=0, carry=1
+        check_alu(4'd12, 4'd3,  3'b001); // 12 - 3
+        check_alu(4'd12, 4'd10, 3'b010); // 12 & 10
+        check_alu(4'd12, 4'd10, 3'b011); // 12 | 10
+        check_alu(4'd12, 4'd10, 3'b100); // 12 ^ 10
+        check_alu(4'd11, 4'd0,  3'b101); // ~11
+        check_alu(4'd9,  4'd0,  3'b110); // 9 << 1
+        check_alu(4'd9,  4'd0,  3'b111); // 9 >> 1
+
+        // Final Result Report
+        if (error_count == 0) begin
+            $display("PASS: All %0d test cases passed successfully.", test_count);
+        end else begin
+            $display("FAIL: %0d out of %0d test cases failed.", error_count, test_count);
         end
 
-        $display("PASS");
         $finish;
     end
 
