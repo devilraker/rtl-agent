@@ -1,0 +1,3 @@
+4-bit counter. Synchronous active-high reset sets q to 0.
+When en is high, q increments by 1 each rising clock edge (wraps 15 -> 0).
+When en is low, q holds its value.
