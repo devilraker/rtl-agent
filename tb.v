@@ -12,7 +12,7 @@ module tb;
     wire zero;
     wire carry;
 
-    // Instantiate the ALU
+    // Instantiate the Unit Under Test (UUT)
     alu uut (
         .a(a),
         .b(b),
@@ -22,108 +22,143 @@ module tb;
         .carry(carry)
     );
 
-    // Variables for checking
-    reg [3:0] exp_result;
-    reg       exp_zero;
-    reg       exp_carry;
-    
-    integer   error_count = 0;
-    integer   test_count = 0;
+    // Variables for self-checking and test tracking
+    reg [3:0] expected_result;
+    reg expected_carry;
+    reg expected_zero;
+    integer error_count = 0;
+    integer test_count = 0;
 
-    // Task to apply inputs, compute expected outputs, and verify
-    task check_alu(input [3:0] in_a, input [3:0] in_b, input [2:0] in_op);
-        reg [4:0] add_temp;
+    // Task to apply inputs, compute expected values via behavioral model, check, and report
+    task check_alu(input [3:0] test_a, input [3:0] test_b, input [2:0] test_op);
         begin
-            a  = in_a;
-            b  = in_b;
-            op = in_op;
+            a = test_a;
+            b = test_b;
+            op = test_op;
             
-            // Wait for combinational propagation
-            #1;
+            #1; // Wait for combinational propagation
 
-            // Compute expected values based on spec
-            exp_carry = 1'b0;
-            case (op)
+            // Compute expected values according to spec
+            case (test_op)
                 3'b000: begin // ADD
-                    add_temp = a + b;
-                    exp_result = add_temp[3:0];
-                    exp_carry  = add_temp[4];
+                    {expected_carry, expected_result} = test_a + test_b;
                 end
                 3'b001: begin // SUB
-                    exp_result = a - b;
-                    exp_carry  = (a < b) ? 1'b1 : 1'b0;
+                    expected_result = test_a - test_b;
+                    expected_carry = (test_a < test_b) ? 1'b1 : 1'b0;
                 end
-                3'b010: exp_result = a & b;   // AND
-                3'b011: exp_result = a | b;   // OR
-                3'b100: exp_result = a ^ b;   // XOR
-                3'b101: exp_result = ~a;      // NOT
-                3'b110: exp_result = a << 1;  // SHL
-                3'b111: exp_result = a >> 1;  // SHR
-                default: exp_result = 4'b0000;
+                3'b010: begin // AND
+                    expected_result = test_a & test_b;
+                    expected_carry = 1'b0;
+                end
+                3'b011: begin // OR
+                    expected_result = test_a | test_b;
+                    expected_carry = 1'b0;
+                end
+                3'b100: begin // XOR
+                    expected_result = test_a ^ test_b;
+                    expected_carry = 1'b0;
+                end
+                3'b101: begin // NOT
+                    expected_result = ~test_a;
+                    expected_carry = 1'b0;
+                end
+                3'b110: begin // SHL
+                    expected_result = test_a << 1;
+                    expected_carry = 1'b0;
+                end
+                3'b111: begin // SHR
+                    expected_result = test_a >> 1;
+                    expected_carry = 1'b0;
+                end
+                default: begin
+                    expected_result = 4'b0;
+                    expected_carry = 1'b0;
+                end
             endcase
 
-            exp_zero = (exp_result == 4'b0000);
-
+            expected_zero = (expected_result == 4'b0000) ? 1'b1 : 1'b0;
             test_count = test_count + 1;
 
-            // Check against actual outputs
-            if ((result !== exp_result) || (zero !== exp_zero) || (carry !== exp_carry)) begin
-                $display("FAIL: op=%b, a=%0d, b=%0d | Expected: res=%0h, z=%0b, c=%0b | Got: res=%0h, z=%0b, c=%0b",
-                         op, a, b, exp_result, exp_zero, exp_carry, result, zero, carry);
+            // Verify outputs
+            if ((result !== expected_result) || (carry !== expected_carry) || (zero !== expected_zero)) begin
+                $display("FAIL: op=%b, a=%d, b=%d | Got: result=%b (carry=%b, zero=%b) | Expected: result=%b (carry=%b, zero=%b)",
+                         test_op, test_a, test_b, result, carry, zero, expected_result, expected_carry, expected_zero);
                 error_count = error_count + 1;
             end
         end
     endtask
 
     initial begin
-        // --- Corner Cases and Comprehensive Testing ---
+        // --- Operation 3'b000: ADD (at least 6 vectors including corner cases) ---
+        check_alu(4'd0,  4'd0,  3'b000); // Corner case: a=0, b=0
+        check_alu(4'd15, 4'd15, 3'b000); // Corner case: a=15, b=15 (carry & wrap)
+        check_alu(4'd5,  4'd5,  3'b000); // Corner case: a=b
+        check_alu(4'd3,  4'd7,  3'b000); // Corner case: a<b
+        check_alu(4'd10, 4'd2,  3'b000); // Standard case
+        check_alu(4'd12, 4'd4,  3'b000); // Corner case: results in zero with carry
 
-        // 1. Zero cases
-        check_alu(4'd0, 4'd0, 3'b000); // ADD: 0 + 0
-        check_alu(4'd0, 4'd0, 3'b001); // SUB: 0 - 0
-        check_alu(4'd0, 4'd0, 3'b010); // AND: 0 & 0
-        check_alu(4'd0, 4'd0, 3'b011); // OR:  0 | 0
-        check_alu(4'd0, 4'd0, 3'b100); // XOR: 0 ^ 0
-        check_alu(4'd0, 4'd0, 3'b101); // NOT: ~0
-        check_alu(4'd0, 4'd0, 3'b110); // SHL: 0 << 1
-        check_alu(4'd0, 4'd0, 3'b111); // SHR: 0 >> 1
+        // --- Operation 3'b001: SUB (at least 6 vectors including corner cases) ---
+        check_alu(4'd0,  4'd0,  3'b001); // Corner case: a=0, b=0 (zero=1)
+        check_alu(4'd15, 4'd15, 3'b001); // Corner case: a=15, b=15 (zero=1)
+        check_alu(4'd5,  4'd5,  3'b001); // Corner case: a=b (zero=1)
+        check_alu(4'd3,  4'd7,  3'b001); // Corner case: a<b (borrow=1)
+        check_alu(4'd10, 4'd2,  3'b001); // Corner case: a>b (borrow=0)
+        check_alu(4'd0,  4'd5,  3'b001); // Corner case: a=0, b>0 (borrow=1)
 
-        // 2. Max value cases (a=15, b=15)
-        check_alu(4'd15, 4'd15, 3'b000); // ADD: 15 + 15 (Carry & wrap)
-        check_alu(4'd15, 4'd15, 3'b001); // SUB: 15 - 15
-        check_alu(4'd15, 4'd15, 3'b010); // AND: 15 & 15
-        check_alu(4'd15, 4'd15, 3'b011); // OR:  15 | 15
-        check_alu(4'd15, 4'd15, 3'b100); // XOR: 15 ^ 15
-        check_alu(4'd15, 4'd15, 3'b101); // NOT: ~15
-        check_alu(4'd15, 4'd15, 3'b110); // SHL: 15 << 1
-        check_alu(4'd15, 4'd15, 3'b111); // SHR: 15 >> 1
+        // --- Operation 3'b010: AND (at least 6 vectors including corner cases) ---
+        check_alu(4'd0,  4'd0,  3'b010); // Corner case: a=0, b=0
+        check_alu(4'd15, 4'd15, 3'b010); // Corner case: a=15, b=15
+        check_alu(4'd5,  4'd5,  3'b010); // Corner case: a=b
+        check_alu(4'd3,  4'd7,  3'b010); // Corner case: a<b
+        check_alu(4'd10, 4'd5,  3'b010); // Standard case (result 0)
+        check_alu(4'd12, 4'd6,  3'b010); // Standard case
 
-        // 3. Equality cases (a == b)
-        check_alu(4'd5, 4'd5, 3'b000);
-        check_alu(4'd5, 4'd5, 3'b001); // SUB results in 0, borrow=0
-        check_alu(4'd7, 4'd7, 3'b100); // XOR results in 0
+        // --- Operation 3'b011: OR (at least 6 vectors including corner cases) ---
+        check_alu(4'd0,  4'd0,  3'b011); // Corner case: a=0, b=0
+        check_alu(4'd15, 4'd15, 3'b011); // Corner case: a=15, b=15
+        check_alu(4'd5,  4'd5,  3'b011); // Corner case: a=b
+        check_alu(4'd3,  4'd7,  3'b011); // Corner case: a<b
+        check_alu(4'd0,  4'd8,  3'b011); // Corner case: a=0, b!=0
+        check_alu(4'd10, 4'd5,  3'b011); // Standard case
 
-        // 4. SUB specific corner cases: a < b (borrow = 1) vs a >= b (borrow = 0)
-        check_alu(4'd3, 4'd5, 3'b001); // 3 - 5 (a < b, borrow=1)
-        check_alu(4'd5, 4'd3, 3'b001); // 5 - 3 (a > b, borrow=0)
-        check_alu(4'd0, 4'd1, 3'b001); // 0 - 1 (borrow=1)
+        // --- Operation 3'b100: XOR (at least 6 vectors including corner cases) ---
+        check_alu(4'd0,  4'd0,  3'b100); // Corner case: a=0, b=0
+        check_alu(4'd15, 4'd15, 3'b100); // Corner case: a=15, b=15 (zero=1)
+        check_alu(4'd5,  4'd5,  3'b100); // Corner case: a=b (zero=1)
+        check_alu(4'd3,  4'd7,  3'b100); // Corner case: a<b
+        check_alu(4'd15, 4'd0,  3'b100); // Corner case: b=0
+        check_alu(4'd10, 4'd5,  3'b100); // Standard case
 
-        // 5. Random/general cases across all operations
-        check_alu(4'd9,  4'd6,  3'b000); // ADD with carry out (9+6=15, no carry), let's do 10+6
-        check_alu(4'd10, 4'd6,  3'b000); // 10 + 6 = 16 -> res=0, carry=1
-        check_alu(4'd12, 4'd3,  3'b001); // 12 - 3
-        check_alu(4'd12, 4'd10, 3'b010); // 12 & 10
-        check_alu(4'd12, 4'd10, 3'b011); // 12 | 10
-        check_alu(4'd12, 4'd10, 3'b100); // 12 ^ 10
-        check_alu(4'd11, 4'd0,  3'b101); // ~11
-        check_alu(4'd9,  4'd0,  3'b110); // 9 << 1
-        check_alu(4'd9,  4'd0,  3'b111); // 9 >> 1
+        // --- Operation 3'b101: NOT (at least 6 vectors including corner cases) ---
+        check_alu(4'd0,  4'd0,  3'b101); // Corner case: a=0 (result=15)
+        check_alu(4'd15, 4'd15, 3'b101); // Corner case: a=15 (result=0, zero=1)
+        check_alu(4'd5,  4'd0,  3'b101); // Corner case: a=5
+        check_alu(4'd3,  4'd12, 3'b101); // Corner case: a=3
+        check_alu(4'd10, 4'd2,  3'b101); // Standard case
+        check_alu(4'd1,  4'd9,  3'b101); // Standard case
 
-        // Final Result Report
+        // --- Operation 3'b110: SHL (at least 6 vectors including corner cases) ---
+        check_alu(4'd0,  4'd0,  3'b110); // Corner case: a=0 (zero=1)
+        check_alu(4'd15, 4'd0,  3'b110); // Corner case: a=15 (result=14)
+        check_alu(4'd5,  4'd0,  3'b110); // Corner case: a=5
+        check_alu(4'd8,  4'd0,  3'b110); // Corner case: a=8 (result=0, zero=1)
+        check_alu(4'd1,  4'd0,  3'b110); // Standard case
+        check_alu(4'd7,  4'd0,  3'b110); // Standard case
+
+        // --- Operation 3'b111: SHR (at least 6 vectors including corner cases) ---
+        check_alu(4'd0,  4'd0,  3'b111); // Corner case: a=0 (zero=1)
+        check_alu(4'd15, 4'd0,  3'b111); // Corner case: a=15 (result=7)
+        check_alu(4'd5,  4'd0,  3'b111); // Corner case: a=5 (result=2)
+        check_alu(4'd1,  4'd0,  3'b111); // Corner case: a=1 (result=0, zero=1)
+        check_alu(4'd8,  4'd0,  3'b111); // Standard case
+        check_alu(4'd4,  4'd0,  3'b111); // Standard case
+
+        // Final result reporting
         if (error_count == 0) begin
-            $display("PASS: All %0d test cases passed successfully.", test_count);
+            $display("PASS");
         end else begin
-            $display("FAIL: %0d out of %0d test cases failed.", error_count, test_count);
+            $display("FAIL: %0d / %0d tests failed.", error_count, test_count);
         end
 
         $finish;
