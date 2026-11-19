@@ -1,5 +1,6 @@
 import os, re, subprocess, sys, time
 from google import genai
+#blooo
 client = genai.Client(api_key=os.environ["API_KEY"])
 
 def ask_llm(prompt):
@@ -25,7 +26,7 @@ def simulate(dut, tb):
     out = r.stdout + r.stderr
     return ("PASS" in out and "FAIL" not in out), out
 
-name = sys.argv[1]
+name = sys.argv[1] 
 dut = f"{name}.v"
 spec = open(f"{name}_spec.txt").read()
 rtl = open(dut).read()
